@@ -1,0 +1,7 @@
+pandas
+openpyxl
+tqdm
+joblib
+colorama
+pyyaml
+rapidfuzz

@@ -1,0 +1,4 @@
+Text,Keyword,Classification
+user password=abc123; email test@example.com at 192.168.0.1,password,
+token: xyz-9999 accessed at 2025-08-13 12:34:56 https://example.com,token,
+"No secrets here, just error logs 404 on 10/01/2024",pass,
