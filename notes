@@ -1,0 +1,12 @@
+def contains_potential_password(text: str, row_keywords: list, custom_keywords: list) -> bool:
+    if not text:
+        return False
+    all_kws = set([kw.strip() for kw in row_keywords + custom_keywords if kw.strip()])
+    for kw in all_kws:
+        # Build flexible pattern: keyword, optional spaces, optional separators, then at least 1 non-space
+        pat = rf'{re.escape(kw)}\s*[:=]\s*\S+'
+        if re.search(pat, text, re.IGNORECASE):
+            return True
+    return False
+
+potential_password_flag = "Yes" if contains_potential_password(text, row_kws, custom_kws) else "No"
