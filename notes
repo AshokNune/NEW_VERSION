@@ -3,13 +3,15 @@ import os
 import glob
 from concurrent.futures import ProcessPoolExecutor
 
-def process_file(file, label_col, selected_cols):
+def process_file(args):
+    file, label_col, selected_cols = args
     try:
         df = pd.read_excel(file)
 
         if label_col not in df.columns:
             return None
 
+        # Filter out LFP and blanks
         filtered = df[
             df[label_col].notna() &
             (df[label_col].astype(str).str.strip() != "") &
@@ -43,8 +45,10 @@ def merge_filtered_from_folder(input_folder, output_file, label_col="Classificat
         print(f"No .xlsx files found in {input_folder}")
         return
 
+    args_list = [(file, label_col, selected_cols) for file in xlsx_files]
+
     with ProcessPoolExecutor(max_workers=workers) as executor:
-        results = executor.map(lambda f: process_file(f, label_col, selected_cols), xlsx_files)
+        results = executor.map(process_file, args_list)
 
         for result in results:
             if result is not None:
