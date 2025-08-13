@@ -1,75 +1,70 @@
-import re
+import pandas as pd
+import os
+import glob
+from concurrent.futures import ProcessPoolExecutor
 
-# --- Config ---
-EXACT_FP_VALUES = {
-    "$null", "null", "none", "nil", "n/a", "na",
-    "on", "off", "true", "false", "yes", "no",
-    "is", "error", "max", "min", "default",
-    "test", "example", "sample", ""
-}
+def process_file(file, label_col, selected_cols):
+    try:
+        df = pd.read_excel(file)
 
-RE_PLACEHOLDER = re.compile(r'^(%[^%]+%|\$\{[^}]+\}|\$[A-Za-z_]\w*|<[^>]+>|\{[^}]+\}|(?:\*{3,}|x{3,}|X{3,}))$')
-RE_URL = re.compile(r'^(?:https?://|www\.|[A-Za-z0-9.-]+\.[A-Za-z]{2,})')
-RE_IP = re.compile(r'^(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}$')
-RE_DATE = re.compile(r'^\d{4}[/-]\d{1,2}[/-]\d{1,2}$|^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$', re.IGNORECASE)
-RE_TIME = re.compile(r'^\d{1,2}:\d{2}(:\d{2})?(\s?(AM|PM|am|pm))?$')
-RE_HEX = re.compile(r'^[0-9a-f]{32}$|^[0-9a-f]{40}$|^[0-9a-f]{64}$|^[0-9a-f]{128}$', re.IGNORECASE)
-RE_BCRYPT = re.compile(r'^\$2[aby]\$.{56}$')
-RE_ARGON2 = re.compile(r'^\$argon2(id|i|d)\$')
-RE_SCRYPT = re.compile(r'^\$scrypt\$')
-RE_PBKDF2 = re.compile(r'^pbkdf2:', re.IGNORECASE)
-RE_BASE64 = re.compile(r'^[A-Za-z0-9+/=]{24,}$')
+        if label_col not in df.columns:
+            return None
 
-SEP_PATTERN = r'(?:[:=]|->|=>|>)'
-VAL_PATTERN = r'([^\s;,]+)'
+        filtered = df[
+            df[label_col].notna() &
+            (df[label_col].astype(str).str.strip() != "") &
+            (df[label_col].astype(str).str.strip().str.lower() != "lfp")
+        ]
 
-def is_fp_value(v: str) -> bool:
-    """Return True if value is a definite FP."""
-    if v is None:
-        return True
-    val = v.strip().strip('"').strip("'")
-    if val.lower() in EXACT_FP_VALUES:
-        return True
-    if RE_PLACEHOLDER.match(val):
-        return True
-    if RE_URL.match(val) or RE_IP.match(val) or RE_DATE.match(val) or RE_TIME.match(val):
-        return True
-    if RE_HEX.match(val) or RE_BCRYPT.match(val) or RE_ARGON2.match(val) or RE_SCRYPT.match(val) or RE_PBKDF2.match(val):
-        return True
-    if RE_BASE64.match(val) and len(val) % 4 == 0:
-        return True
-    if val.isdigit() and len(val) <= 5:
-        return True
-    return False
+        if filtered.empty:
+            return None
 
-def looks_like_password_value(v: str) -> bool:
-    """Return True if value is strong enough to look like a password."""
-    val = v.strip().strip('"').strip("'")
-    if len(val) < 6:
-        return False
-    classes = 0
-    classes += bool(re.search(r'[A-Z]', val))
-    classes += bool(re.search(r'[a-z]', val))
-    classes += bool(re.search(r'\d', val))
-    classes += bool(re.search(r'[^A-Za-z0-9]', val))
-    return classes >= 2  # at least two character types
+        # Add source filename
+        filtered["SourceFile"] = os.path.basename(file)
 
-def classify_potential_password(text: str, keywords: list) -> str:
-    """
-    Returns 'Yes' if potential password found, otherwise 'No'.
-    keywords: list of keywords from 'Keyword' column + custom keyword file.
-    """
-    if not text:
-        return "No"
-    all_kws = {k.strip() for k in keywords if k and k.strip()}
-    for kw in all_kws:
-        pat = rf'{re.escape(kw)}\s*{SEP_PATTERN}\s*{VAL_PATTERN}'
-        m = re.search(pat, text, re.IGNORECASE)
-        if not m:
-            continue
-        val = m.group(1)
-        if is_fp_value(val):
-            continue
-        if looks_like_password_value(val):
-            return "Yes"
-    return "No"
+        if selected_cols:
+            existing_cols = [col for col in selected_cols if col in filtered.columns]
+            if "SourceFile" not in existing_cols:
+                existing_cols.append("SourceFile")
+            filtered = filtered[existing_cols]
+
+        return filtered
+
+    except Exception as e:
+        print(f"❌ Error reading {file}: {e}")
+        return None
+
+def merge_filtered_from_folder(input_folder, output_file, label_col="Classification", selected_cols=None, workers=4):
+    all_data = []
+
+    xlsx_files = glob.glob(os.path.join(input_folder, "*.xlsx"))
+
+    if not xlsx_files:
+        print(f"No .xlsx files found in {input_folder}")
+        return
+
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        results = executor.map(lambda f: process_file(f, label_col, selected_cols), xlsx_files)
+
+        for result in results:
+            if result is not None:
+                all_data.append(result)
+
+    if all_data:
+        merged_df = pd.concat(all_data, ignore_index=True)
+        merged_df.to_excel(output_file, index=False)
+        print(f"\n💾 Merged filtered data saved to: {output_file}")
+    else:
+        print("\n⚠ No matching rows found in given folder.")
+
+if __name__ == "__main__":
+    folder_path = input("Enter folder path containing .xlsx files: ").strip()
+    output_file = input("Enter output Excel filename (default merged_filtered.xlsx): ").strip() or "merged_filtered.xlsx"
+
+    selected_columns = [
+        "Snippet",
+        "Classification",
+        "FileName"
+    ]
+
+    merge_filtered_from_folder(folder_path, output_file, label_col="Classification", selected_cols=selected_columns, workers=4)
