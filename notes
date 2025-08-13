@@ -3,13 +3,29 @@ def contains_potential_password(text: str, row_keywords: list, custom_keywords: 
         return False
     all_kws = set([kw.strip() for kw in row_keywords + custom_keywords if kw.strip()])
     for kw in all_kws:
-        # Match keyword, optional spaces, separator (: or =), then some value
-        pat = rf'{re.escape(kw)}\s*[:=]\s*(\S+)'
+        # Match patterns like kw=xxx , kw > xxx , kw:xxx , kw->xxx, kw=>xxx
+        pat = rf'{re.escape(kw)}\s*(?:[:=]|->|=>|>)\s*(\S*)'
         m = re.search(pat, text, re.IGNORECASE)
         if m:
-            value = m.group(1)
-            # Exclude placeholder-like %xxx%
-            if re.match(r'%[^%]+%', value):
+            value = m.group(1) or ""  # If nothing captured, treat as empty
+
+            # Normalize value for checking
+            val_clean = value.strip().strip('"').strip("'").lower()
+
+            # Exclusion rules
+            if not val_clean:  # Empty string
                 continue
+            if val_clean in {"$null", "null", "none", "on", "max", "min", "is", "error"}:
+                continue
+            if re.match(r'%[^%]+%', val_clean):  # %xxx%
+                continue
+            if re.match(r'<[^>]+>', val_clean):  # <placeholder>
+                continue
+            if re.match(r'\{[^}]+\}', val_clean):  # {placeholder}
+                continue
+            if re.match(r'^%".*"%$', value):  # "%...%"
+                continue
+
+            # If it passed all exclusions, it's potential password
             return True
     return False
