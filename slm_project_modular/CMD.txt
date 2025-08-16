@@ -1,0 +1,14 @@
+# 1) Train tokenizer
+python train_tokenizer.py --input_file data/your_file.xlsx
+
+# 2) Tokenize dataset (LFP -> 0, others -> 1.. enforced here)
+python tokenize_dataset.py --input_file data/your_file.xlsx --max_length 256
+
+# 3) Create batches (pads and packs tensors)
+python create_batches.py
+
+# 4) Train (saves only best_model.pt by validation accuracy)
+python train_slm.py --epochs 5 --batch_size 32
+
+# 5) Inference (uses best_model.pt)
+python inference.py --text "some text" --keyword "kw"
