@@ -1,0 +1,7 @@
+pandas
+numpy
+torch
+tokenizers
+matplotlib
+scikit-learn
+openpyxl
