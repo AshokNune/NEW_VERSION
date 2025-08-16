@@ -1,9 +1,0 @@
-Text,Keyword,classification
-Payment failed due to timeout. Please retry.,payment,error
-Account created successfully!,account,success
-Reset password link expired.,password,warning
-Upgrade to premium for more features.,premium,marketing
-Unexpected server error occurred.,server,error
-Your invoice is ready to download.,invoice,success
-Password changed successfully.,password,success
-"Offer ends tomorrow, don't miss out.",offer,marketing
