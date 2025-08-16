@@ -1,54 +1,50 @@
-import os
 import argparse
+import os
 import pandas as pd
-from tokenizers import Tokenizer, models, trainers, pre_tokenizers, decoders
+from tokenizers import ByteLevelBPETokenizer
 
-def read_input(path):
-    """Read either a single file or all .xlsx files in a folder"""
-    texts = []
-    if os.path.isfile(path):
-        if path.endswith(".xlsx"):
-            df = pd.read_excel(path)
-            if "Text" in df.columns:
-                texts.extend(df["Text"].astype(str).tolist())
-            if "Keyword" in df.columns:
-                texts.extend(df["Keyword"].astype(str).tolist())
-    elif os.path.isdir(path):
-        for file in os.listdir(path):
-            if file.endswith(".xlsx"):
-                df = pd.read_excel(os.path.join(path, file))
-                if "Text" in df.columns:
-                    texts.extend(df["Text"].astype(str).tolist())
-                if "Keyword" in df.columns:
-                    texts.extend(df["Keyword"].astype(str).tolist())
-    else:
-        raise ValueError("Input path must be a .xlsx file or a folder containing .xlsx files")
-    return texts
+def load_files(input_dir):
+    dfs = []
+    for fname in os.listdir(input_dir):
+        fpath = os.path.join(input_dir, fname)
+        if fname.endswith(".csv"):
+            dfs.append(pd.read_csv(fpath))
+        elif fname.endswith(".xlsx"):
+            dfs.append(pd.read_excel(fpath, engine="openpyxl"))
+    if not dfs:
+        raise ValueError(f"No CSV/XLSX files found in {input_dir}")
+    return pd.concat(dfs, ignore_index=True)
 
-def train_tokenizer(input_path, vocab_size=1000, save_path="artifacts/tokenizer/tokenizer.json"):
-    texts = read_input(input_path)
+def main(args):
+    # Load dataset
+    df = load_files(args.input_dir)
+    if "Text" not in df.columns:
+        raise ValueError("Dataset must contain a 'Text' column")
 
-    # Define a BPE tokenizer
-    tokenizer = Tokenizer(models.BPE())
-    tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
-    tokenizer.decoder = decoders.BPEDecoder()
+    texts = df["Text"].astype(str).tolist()
 
-    trainer = trainers.BpeTrainer(
-        vocab_size=vocab_size,
-        special_tokens=["[PAD]", "[UNK]", "[CLS]", "[SEP]", "[MASK]"]
-    )
-    tokenizer.train_from_iterator(texts, trainer=trainer)
+    # Train tokenizer (BPE)
+    tokenizer = ByteLevelBPETokenizer()
+    tokenizer.train_from_iterator(texts, vocab_size=args.vocab_size, min_frequency=2)
 
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    tokenizer.save(save_path)
-    print(f"Tokenizer trained with vocab_size={vocab_size} and saved to {save_path}")
+    # Save tokenizer
+    os.makedirs(args.out_dir, exist_ok=True)
+    tokenizer.save_model(args.out_dir)
+
+    vocab_file = os.path.join(args.out_dir, "vocab.json")
+    merges_file = os.path.join(args.out_dir, "merges.txt")
+
+    # ✅ Verify both files exist
+    if not os.path.exists(vocab_file) or not os.path.exists(merges_file):
+        raise RuntimeError("Tokenizer training failed: vocab.json or merges.txt not found!")
+
+    print(f"✅ Tokenizer trained and saved to {args.out_dir}")
+    print(f"   Files created: vocab.json, merges.txt")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train a BPE tokenizer on .xlsx data")
-    parser.add_argument("--input", type=str, required=True, help="Path to .xlsx file or folder of .xlsx files")
-    parser.add_argument("--vocab_size", type=int, default=1000, help="Vocabulary size")
-    parser.add_argument("--save_path", type=str, default="artifacts/tokenizer/tokenizer.json", help="Path to save tokenizer JSON")
-
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input_dir", type=str, default="data", help="Folder with CSV/XLSX files")
+    parser.add_argument("--out_dir", type=str, default="artifacts/tokenizer")
+    parser.add_argument("--vocab_size", type=int, default=3000)
     args = parser.parse_args()
-
-    train_tokenizer(args.input, args.vocab_size, args.save_path)
+    main(args)
